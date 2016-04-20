@@ -85,7 +85,7 @@ namespace Template10.Controls
                 {
                     var element = FocusManager.GetFocusedElement() as FrameworkElement;
                     var name = element?.Name ?? "no-name";
-                    var content = (((element as ContentControl)?.Content as StackPanel)?.Children[0] as SymbolIcon)?.Symbol;
+                    var content = (((element as ContentControl)?.Content as StackPanel)?.Children[0] as SymbolIcon)?.Symbol.ToString();
                     if (content == null) content = (element as ContentControl)?.Content?.ToString() ?? "no-content";
                     var value = $"{element?.ToString() ?? "null"} {name} {content}";
                     DebugWrite(value, caller: "GotFocus");
@@ -107,12 +107,77 @@ namespace Template10.Controls
             HamburgerButton.KeyDown += HamburgerMenu_KeyDown;
             PrimaryButtonContainer.KeyDown += HamburgerMenu_KeyDown;
             SecondaryButtonContainer.KeyDown += HamburgerMenu_KeyDown;
+	        KeyDown += Global_KeyDown;
 
             // initial styles
             RefreshStyles(RequestedTheme);
         }
 
-        void HamburgerMenu_LayoutUpdated(object sender, object e)
+	    private void Global_KeyDown(object sender, KeyRoutedEventArgs e) {
+		    if (e.Key != VirtualKey.Tab)
+			    return;
+			var shiftState = CoreWindow.GetForCurrentThread().GetKeyState(VirtualKey.Shift);
+			var reverse = Equals(shiftState & CoreVirtualKeyStates.Down, CoreVirtualKeyStates.Down);
+			var elem = FocusManager.FindNextFocusableElement(reverse ? FocusNavigationDirection.Previous : FocusNavigationDirection.Next);
+			//TODO: perf changes and simplifying
+			var firstItem = LoadedNavButtons.FirstOrDefault(x => x.HamburgerButtonInfo == (PrimaryButtons.FirstOrDefault() ?? SecondaryButtons.FirstOrDefault()))?.FrameworkElement;
+			var lastItem = LoadedNavButtons.FirstOrDefault(x => x.HamburgerButtonInfo == (SecondaryButtons.LastOrDefault() ?? PrimaryButtons.LastOrDefault()))?.FrameworkElement;
+		    if (firstItem == null)//For now if there are 0 items in nav lets not worry about it
+			    return;
+
+			if (reverse) {
+				//if we are entering into the HamburgerButton in reverse and not coming from the first button then we should be going to the lastItem
+				if (Equals(elem, HamburgerButton) && !Equals(FocusManager.GetFocusedElement(), firstItem) ) { 
+				    e.Handled = true;
+					(lastItem as Control)?.Focus(FocusState.Programmatic);
+				}
+
+				//If we are currently on the first button then we should go back to HamButton
+				else if (Equals(elem, firstItem)) {
+					e.Handled = true;
+					HamburgerButton.Focus(FocusState.Programmatic);
+				}
+				//if we are on the ham button tabbing in reverse we want to exit the control
+				else if (Equals(FocusManager.GetFocusedElement(), HamburgerButton)) {
+					(firstItem as Control)?.Focus(FocusState.Programmatic);
+					var prev_item = FocusManager.FindNextFocusableElement(FocusNavigationDirection.Previous) as Control;
+					if (Equals(prev_item, HamburgerButton)) //THIS ONLY happens if there is nothing on the page other than the hamburger menu could probably leave this case out
+						e.Handled = (lastItem as Control).Focus(FocusState.Programmatic);
+					else
+						e.Handled = prev_item?.Focus(FocusState.Programmatic) ?? false;
+				}
+
+			} else {
+				//if we are tabbing into the first item and not from the HamButton then we are entering the control and should go to HamButton
+				if (Equals(elem, firstItem) && !Equals(FocusManager.GetFocusedElement(), HamburgerButton)) { 
+					e.Handled = true;
+				    HamburgerButton.Focus(FocusState.Programmatic);
+			    }
+
+				//If we are on the HamburgurButton we just want to go to the first button, we could just use FocusDown, but might as well just set to first button
+				else if (Equals(FocusManager.GetFocusedElement(), HamburgerButton)) {
+					e.Handled = true;
+					(firstItem as Control)?.Focus(FocusState.Programmatic);
+				}
+
+				//If the next element is the HamburgerButton and we are coming from the last element we actually want to be exiting the control so lets put it on the 'last item' then let the event go on
+				else if ((elem == null && Equals(FocusManager.GetFocusedElement(), lastItem)) || Equals(elem, HamburgerButton)) {//elem is null when its the last item on the commandbar
+
+					e.Handled = FocusManager.TryMoveFocus(FocusNavigationDirection.Next);//first lets move to the next item, if it is the hamburger menu like we suspected we can now continue
+					if (!e.Handled && Equals(FocusManager.GetFocusedElement(), lastItem)) {
+						e.Handled = true;
+						HamburgerButton.Focus(FocusState.Programmatic);
+					}
+					if (Equals(FocusManager.GetFocusedElement(), HamburgerButton)) {
+						var next_item = FocusManager.FindNextFocusableElement(FocusNavigationDirection.Next) as Control;
+						if (! Equals(next_item,firstItem) )//THIS ONLY happens if there is nothing on the page other than the hamburger menu, in which case we want to stay focued on the ham button, honestly you could get rid of this case as im not sure anyone will care if its not rihgt
+							next_item?.Focus(FocusState.Programmatic);
+					}
+				}
+			}
+	    }
+
+	    void HamburgerMenu_LayoutUpdated(object sender, object e)
         {
             DebugWrite();
 
